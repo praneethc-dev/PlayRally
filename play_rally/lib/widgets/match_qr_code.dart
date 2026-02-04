@@ -12,7 +12,7 @@ class MatchQrCode extends StatelessWidget {
     final uuid = controller.matchUuid;
     
     // URL to view the match ticker
-    final tickerUrl = 'https://ticker.homegroundapp.com/match/$uuid';
+    final tickerUrl = '$uuid';
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
