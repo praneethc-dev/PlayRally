@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../utils/constants.dart';
 
-/// Home Screen - Two main options with lavender Apple-style design
+/// Home Screen - Two main options
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -53,42 +53,10 @@ class HomeScreen extends StatelessWidget {
               const SizedBox(height: 48),
               
               // Option buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildOptionCard(
-                    icon: Icons.sports_tennis,
-                    title: 'Score\nMatch',
-                    onTap: () => Get.toNamed(Routes.gameFormat),
-                  ),
-                  const SizedBox(width: 32),
-                  _buildOptionCard(
-                    icon: Icons.stream,
-                    title: 'Stream\nMatch',
-                    isComingSoon: true,
-                    onTap: () {
-                      Get.dialog(
-                        AlertDialog(
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          title: Row(
-                            children: [
-                              Icon(Icons.construction, color: AppColors.primary),
-                              const SizedBox(width: 10),
-                              const Text('Coming Soon'),
-                            ],
-                          ),
-                          content: const Text('Stream Match feature is under development.'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Get.back(),
-                              child: Text('OK', style: TextStyle(color: AppColors.primary)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
+              _buildOptionCard(
+                icon: Icons.sports_tennis,
+                title: 'Score\nMatch',
+                onTap: () => Get.toNamed(Routes.gameFormat),
               ),
             ],
           ),

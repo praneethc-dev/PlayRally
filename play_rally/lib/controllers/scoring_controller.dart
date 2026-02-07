@@ -100,11 +100,19 @@ class ScoringController extends GetxController {
     required String bluePlayer1,
     String? bluePlayer2,
   }) {
-    // Red team on left (tl, bl), Blue team on right (tr, br)
-    playerStats['tl']!['name'] = redPlayer1;
-    playerStats['bl']!['name'] = redPlayer2 ?? '';
-    playerStats['tr']!['name'] = bluePlayer1;
-    playerStats['br']!['name'] = bluePlayer2 ?? '';
+    if (gameType.value == 'Singles') {
+      // Singles: Red starts at Bottom-Left (bl), Blue at Top-Right (tr)
+      playerStats['tl']!['name'] = '';
+      playerStats['bl']!['name'] = redPlayer1;
+      playerStats['tr']!['name'] = bluePlayer1;
+      playerStats['br']!['name'] = '';
+    } else {
+      // Doubles: Red team on left (tl, bl), Blue team on right (tr, br)
+      playerStats['tl']!['name'] = redPlayer1;
+      playerStats['bl']!['name'] = redPlayer2 ?? '';
+      playerStats['tr']!['name'] = bluePlayer1;
+      playerStats['br']!['name'] = bluePlayer2 ?? '';
+    }
     
     // Reset all servers
     for (var pos in playerStats.keys) {
@@ -177,6 +185,15 @@ class ScoringController extends GetxController {
     playerStats.refresh();
   }
 
+  /// Toggle server number manually (1 <-> 2)
+  void toggleServerNumber() {
+    if (!serverChosen.value || gameType.value == 'Singles') return;
+    
+    serverScore.value = serverScore.value == 1 ? 2 : 1;
+    // We might want to refresh playerStats just to ensure UI updates if it depends on this
+    playerStats.refresh(); 
+  }
+
   /// Score point by clicking on a side (0 = left, 1 = right)
   void scorePoint(int side) {
     if (matchEnded.value || !serverChosen.value) return;
@@ -221,31 +238,80 @@ class ScoringController extends GetxController {
       _triggerAnimation();
     } else {
       // Serving team loses rally
-      if (serverScore.value == 1) {
-        // First server lost - switch to teammate (second server)
+      if (gameType.value == 'Singles') {
+        // SINGLES: Side Out Logic
         playerStats[serverPos]!['server'] = false;
-        playerStats[teammatePos]!['server'] = true;
-        serverScore.value = 2;
-        result = 'Second Serve';
-      } else {
-        // Second server lost - SIDE OUT
-        // Opponent serving position: left court = bl, right court = tr
-        String opponentServePos = serverOnLeft ? 'tr' : 'bl';
-        playerStats[serverPos]!['server'] = false;
-        playerStats[opponentServePos]!['server'] = true;
-        serverScore.value = 1;
+        
+        int opponentTeamNum = (serverTeamIndex == 0) ? 1 : 0;
+        int opponentScore = (opponentTeamNum == 0) ? redTeamScore.value : blueTeamScore.value;
+        bool shouldBeOnRight = (opponentScore % 2 == 0);
+        
+        String correctPos = '';
+        String wrongPos = '';
+        
+        bool isOpponentOnLeft;
+        if (!courtsSwapped.value) {
+          isOpponentOnLeft = (opponentTeamNum == 0);
+        } else {
+          isOpponentOnLeft = (opponentTeamNum == 1);
+        }
+        
+        if (isOpponentOnLeft) {
+          correctPos = shouldBeOnRight ? 'bl' : 'tl';
+          wrongPos = shouldBeOnRight ? 'tl' : 'bl';
+        } else {
+          correctPos = shouldBeOnRight ? 'tr' : 'br';
+          wrongPos = shouldBeOnRight ? 'br' : 'tr';
+        }
+        
+        bool playerAtCorrect = (playerStats[correctPos]!['name'] as String).isNotEmpty;
+        
+        if (!playerAtCorrect) {
+          var temp = Map<String, dynamic>.from(playerStats[correctPos]!);
+          playerStats[correctPos] = Map<String, dynamic>.from(playerStats[wrongPos]!);
+          playerStats[wrongPos] = temp;
+        }
+        
+        playerStats[correctPos]!['server'] = true;
+        serverScore.value = 1; 
+        
         result = 'Side-out';
+        
+      } else {
+        // DOUBLES Logic
+        if (serverScore.value == 1) {
+          // First server lost - switch to teammate (Second Serve)
+          print('DEBUG: First Server Lost. Switching to Server 2.');
+          playerStats[serverPos]!['server'] = false;
+          playerStats[teammatePos]!['server'] = true;
+          
+          serverScore.value = 2; // Immediate update
+          
+          result = 'Second Serve';
+        } else {
+          // Second server lost - SIDE OUT
+          print('DEBUG: Second Server Lost. Side Out.');
+          String opponentServePos = serverOnLeft ? 'tr' : 'bl';
+          playerStats[serverPos]!['server'] = false;
+          playerStats[opponentServePos]!['server'] = true;
+          
+          serverScore.value = 1; // Immediate update
+          
+          result = 'Side-out';
+        }
       }
     }
     
     // Log the score event
     String endScore = getCurrentScore();
     logScore(startScore, endScore, serverName, result);
+    print('DEBUG: Score Update. Start: $startScore, End: $endScore');
     
     // Publish to MQTT
     publishScore(eventType: won ? 1 : 0);
     
-    playerStats.refresh();
+    serverScore.refresh(); // Force refresh of server score
+    playerStats.refresh(); // Update player stats (positions/server flag)
     _checkSetWin();
   }
 
@@ -367,6 +433,16 @@ class ScoringController extends GetxController {
     playerStats.assignAll(Map<String, Map<String, dynamic>>.from(
       (lastPlayers as Map).map((k, v) => MapEntry(k.toString(), Map<String, dynamic>.from(v)))
     ));
+
+    // Remove last log entry
+    if ((scoreLogs['start'] as List).length > 1) {
+      (scoreLogs['start'] as List).removeLast();
+      (scoreLogs['end'] as List).removeLast();
+      (scoreLogs['servers'] as List).removeLast();
+      (scoreLogs['result'] as List).removeLast();
+      (scoreLogs['setIndex'] as List).removeLast();
+      scoreLogs.refresh();
+    }
   }
 
   void resetMatch() {
@@ -393,14 +469,24 @@ class ScoringController extends GetxController {
   }
 
   /// Get the current score string: serving_team_score-opponent_score-server#
+  /// Get the current score string: serving_team_score-opponent_score-server#
   String getCurrentScore() {
-    if (!serverChosen.value) return '0-0-2';
+    if (!serverChosen.value) {
+      return gameType.value == 'Singles' ? '0-0' : '0-0-2';
+    }
     
     int servTeam = servingTeam;
+    String baseScore;
     if (servTeam == 0) {
-      return '${redTeamScore.value}-${blueTeamScore.value}-${serverScore.value}';
+      baseScore = '${redTeamScore.value}-${blueTeamScore.value}';
     } else {
-      return '${blueTeamScore.value}-${redTeamScore.value}-${serverScore.value}';
+      baseScore = '${blueTeamScore.value}-${redTeamScore.value}';
+    }
+
+    if (gameType.value == 'Singles') {
+      return baseScore;
+    } else {
+      return '$baseScore-${serverScore.value}';
     }
   }
   
